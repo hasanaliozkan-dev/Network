@@ -2,6 +2,7 @@ import nnfs
 from nnfs.datasets import spiral_data
 nnfs.init()
 import numpy as np
+import tensorflow as tf
 class Dense:
     def __init__(self,n_inputs,n_neurons):
         self.weights = 0.01*np.random.randn(n_inputs,n_neurons)

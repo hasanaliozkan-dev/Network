@@ -9,7 +9,15 @@ class Dense:
         
     
     def forward(self,inputs):
+        self.inputs = inputs
         self.output = np.dot(inputs,self.weights) + self.biases
+
+    def backward(self,dvalues):
+        self.dweights = np.dot(self.inputs.T,dvalues)
+        self.dbiases = np.sum(dvalues,axis=0,keepdims=True)
+        self.dinputs = np.dot(dvalues,self.weights.T)
+    
+
 
     
 
@@ -40,7 +48,14 @@ class ActivationFunctions:
             Args:
                 inputs: This is the input to the activation function.
             """
-            pass
+            self.inputs = inputs
+        def backward(self,dvalues):
+            """
+            This method is used to calculate the derivative of the activation function.
+            Args:
+                dvalues: This is the derivative of the loss function with respect to the output of the activation function.
+            """
+            self.dinputs = dvalues.copy()
 
     class ReLU(Activation):
         """
@@ -56,7 +71,12 @@ class ActivationFunctions:
             Args:
                 inputs: This is the input to the activation function.
             """
+            self.inputs = inputs
             self.output = np.maximum(0,inputs)
+        
+        def backward(self,dvalues):
+            self.dinputs = dvalues.copy()
+            self.dinputs[self.inputs <= 0] = 0
 
     class Softmax(Activation):
         """
@@ -72,8 +92,16 @@ class ActivationFunctions:
             Args:
                 inputs: This is the input to the activation function.
             """
+            self.inputs = inputs
             exp_values = np.exp(inputs)
             self.output = exp_values/np.sum(exp_values,axis=1,keepdims=True)
+
+        def backward(self,dvalues):
+            self.dinputs = np.empty_like(dvalues)
+            for index,(single_output,single_dvalues) in enumerate(zip(self.output,dvalues)):
+                single_output = single_output.reshape(-1,1)
+                jacobian_matrix = np.diagflat(single_output) - np.dot(single_output,single_output.T)
+                self.dinputs[index] = np.dot(jacobian_matrix,single_dvalues)
 
     class Sigmoid(Activation):
         """
@@ -89,7 +117,11 @@ class ActivationFunctions:
             Args:
                 inputs: This is the input to the activation function.
             """
+            self.inputs = inputs
             self.output = 1/(1+np.exp(-inputs))
+        def backward(self,dvalues):
+            self.dinputs = dvalues*(1-self.output)*self.output
+
 
     class TanH(Activation):
         """
@@ -431,6 +463,18 @@ class LossFunctions:
                 correct_confidences = np.sum(y_pred_clipped*y_true,axis=1)
             negative_log_likelihoods = -np.log(correct_confidences)
             return negative_log_likelihoods
+        
+        def backward(self,dvalues,y_true):
+            samples = len(dvalues)
+
+            labels = len(dvalues[0])
+
+            if len(y_true.shape) == 1:
+                y_true = np.eye(labels,y_true)
+            
+            self.dinputs = (-y_true/ dvalues)/samples
+
+
     
     class SparseCategoricalCrossEntropy(Loss):
         def forward(self,y_pred,y_true):

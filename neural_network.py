@@ -2,7 +2,7 @@ import nnfs
 from nnfs.datasets import spiral_data
 nnfs.init()
 import numpy as np
-import tensorflow as tf
+
 class Dense:
     def __init__(self,n_inputs,n_neurons):
         self.weights = 0.01*np.random.randn(n_inputs,n_neurons)
@@ -93,12 +93,12 @@ class ActivationFunctions:
             Args:
                 inputs: This is the input to the activation function.
             """
-            self.inputs = inputs
             exp_values = np.exp(inputs)
             self.output = exp_values/np.sum(exp_values,axis=1,keepdims=True)
 
         def backward(self,dvalues):
             self.dinputs = np.empty_like(dvalues)
+
             for index,(single_output,single_dvalues) in enumerate(zip(self.output,dvalues)):
                 single_output = single_output.reshape(-1,1)
                 jacobian_matrix = np.diagflat(single_output) - np.dot(single_output,single_output.T)
@@ -701,26 +701,69 @@ class LossFunctions:
             return sample_losses
         
 
+class Activation_S_Loss_CC():
+    def __init__(self):
+        self.activation = ActivationFunctions.Softmax()
+        self.loss = LossFunctions.CategoricalCrossEntropy()
+    
+    def forward(self,inputs,y_true):
+        self.activation.forward(inputs)
+        self.output = self.activation.output
 
+        return self.loss.calculate(self.output,y_true)
+    def backward(self,dvalues,y_true):
+        samples = len(dvalues)
+
+        if len(y_true.shape) == 2:
+            y_true = np.argmax(y_true,axis=1)
+
+        self.dinputs = dvalues.copy()
+        self.dinputs[range(samples), y_true] -= 1
+        self.dinputs = self.dinputs / samples
 
 
 X,y = spiral_data(samples=100 , classes = 3)
 dense1 = Dense(2,3)
 dense2 = Dense(3,3)
+print("Dense1 weights: ",dense1.weights)
+print()
+print("Dense1 biases: ",dense1.biases)
+print()
+print("Dense2 weights: ",dense2.weights)
+print()
+print("Dense2 biases: ",dense2.biases)
+print()
+
 relu = ActivationFunctions().ReLU()
-softmax = ActivationFunctions.Softmax()
-cce_loss = LossFunctions().CategoricalCrossEntropy()
+softcc = Activation_S_Loss_CC()
+
 dense1.forward(X)
 relu.forward(dense1.output)
 dense2.forward(relu.output)
-softmax.forward(dense2.output)
-loss = cce_loss.calculate(softmax.output,y)
+loss = softcc.forward(dense2.output,y)
 
-preds = np.argmax(softmax.output,axis=1)
+
+print(f"Loss: {loss}")
+print()
+preds = np.argmax(softcc.output,axis=1)
 if len(y.shape)==2:
     y = np.argmax(y,axis=1)
 accuracy = np.mean(preds==y)
-print(accuracy)
-print(loss)
+print(f"Accuracy: {accuracy}")
+print()
+
+softcc.backward(softcc.output,y)
+dense2.backward(softcc.dinputs)
+relu.backward(dense2.dinputs)
+dense1.backward(relu.dinputs)
+
+print("Dense1 weights: ",dense1.weights)
+print()
+print("Dense1 biases: ",dense1.biases)
+print()
+print("Dense2 weights: ",dense2.weights)
+print()
+print("Dense2 biases: ",dense2.biases)
+print()
 
 

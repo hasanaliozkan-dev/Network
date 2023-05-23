@@ -17,10 +17,6 @@ class Dense:
         self.dweights = np.dot(self.inputs.T,dvalues)
         self.dbiases = np.sum(dvalues,axis=0,keepdims=True)
         self.dinputs = np.dot(dvalues,self.weights.T)
-    
-
-
-    
 
 class ActivationFunctions:
 
@@ -436,7 +432,6 @@ class ActivationFunctions:
             """
             self.output = np.exp(-self.gamma*np.square(inputs))
 
-
 class LossFunctions:
     class Loss:
         def calculate(self,output,y):
@@ -700,7 +695,6 @@ class LossFunctions:
             sample_losses = tf.reduce_mean(tf.math.log(1+tf.exp(-y_true*y_pred_clipped)),axis=-1)
             return sample_losses
         
-
 class Activation_S_Loss_CC():
     def __init__(self):
         self.activation = ActivationFunctions.Softmax()
@@ -721,10 +715,36 @@ class Activation_S_Loss_CC():
         self.dinputs[range(samples), y_true] -= 1
         self.dinputs = self.dinputs / samples
 
+class Optimizers():
+    class Optimizer():
+        def __init__(self,learning_rate= 1.0,decay=0.0):
+            self.learning_rate = learning_rate
+            self.current_learning_rate = learning_rate
+            self.decay = decay
+            self.iterations = 0
+
+
+        def update_params(self,layer):
+            pass
+
+    class SGD(Optimizer):
+        def __init__(self, learning_rate=1, decay=0.):
+            super().__init__(learning_rate, decay)
+        
+        def pre_update_params(self):
+            if self.decay:
+                self.current_learning_rate = self.learning_rate * (1. / (1. + self.decay * self.iterations))
+        def update_params(self, layer):
+            layer.weights += -self.current_learning_rate * layer.dweights
+            layer.biases += -self.current_learning_rate * layer.dbiases
+        def post_update_params(self):
+            self.iterations += 1
+
 
 X,y = spiral_data(samples=100 , classes = 3)
-dense1 = Dense(2,3)
-dense2 = Dense(3,3)
+dense1 = Dense(2,64)
+dense2 = Dense(64,3)
+"""
 print("Dense1 weights: ",dense1.weights)
 print()
 print("Dense1 biases: ",dense1.biases)
@@ -733,37 +753,37 @@ print("Dense2 weights: ",dense2.weights)
 print()
 print("Dense2 biases: ",dense2.biases)
 print()
-
+"""
 relu = ActivationFunctions().ReLU()
 softcc = Activation_S_Loss_CC()
-
-dense1.forward(X)
-relu.forward(dense1.output)
-dense2.forward(relu.output)
-loss = softcc.forward(dense2.output,y)
+sgd = Optimizers.SGD(decay=1e-3)
 
 
-print(f"Loss: {loss}")
-print()
-preds = np.argmax(softcc.output,axis=1)
-if len(y.shape)==2:
-    y = np.argmax(y,axis=1)
-accuracy = np.mean(preds==y)
-print(f"Accuracy: {accuracy}")
-print()
+for epoch in range(100001):
 
-softcc.backward(softcc.output,y)
-dense2.backward(softcc.dinputs)
-relu.backward(dense2.dinputs)
-dense1.backward(relu.dinputs)
+    dense1.forward(X)
+    relu.forward(dense1.output)
+    dense2.forward(relu.output)
+    loss = softcc.forward(dense2.output,y)
+    preds = np.argmax(softcc.output,axis=1)
+    if len(y.shape)==2:
+        y = np.argmax(y,axis=1)
+    accuracy = np.mean(preds==y)
 
-print("Dense1 weights: ",dense1.weights)
-print()
-print("Dense1 biases: ",dense1.biases)
-print()
-print("Dense2 weights: ",dense2.weights)
-print()
-print("Dense2 biases: ",dense2.biases)
-print()
+    if not epoch % 100:
+        print(f"epoch: {epoch}, acc: {accuracy:.3f}, loss: {loss:.3f}, lr: {sgd.current_learning_rate:.3f}")
+    if accuracy > 0.8:
+        break
+
+    softcc.backward(softcc.output,y)
+    dense2.backward(softcc.dinputs)
+    relu.backward(dense2.dinputs)
+    dense1.backward(relu.dinputs)
+
+    sgd.pre_update_params()
+    sgd.update_params(dense1)
+    sgd.update_params(dense2)
+    sgd.post_update_params()
+
 
 

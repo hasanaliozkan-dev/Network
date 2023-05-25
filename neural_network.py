@@ -83,23 +83,37 @@ class ActivationFunctions:
         Methods:
             forward(inputs): This method is used to calculate the output of the activation function.
         """
-        def forward(self,inputs):
-            """
-            This method is used to calculate the output of the activation function.
-            Args:
-                inputs: This is the input to the activation function.
-            """
-            exp_values = np.exp(inputs)
-            self.output = exp_values/np.sum(exp_values,axis=1,keepdims=True)
+        def forward(self, inputs):
+            # Remember input values
+            self.inputs = inputs
 
-        def backward(self,dvalues):
+            # Get unnormalized probabilities
+            exp_values = np.exp(inputs - np.max(inputs, axis=1,
+                                                keepdims=True))
+            # Normalize them for each sample
+            probabilities = exp_values / np.sum(exp_values, axis=1,
+                                                keepdims=True)
+
+            self.output = probabilities
+
+    # Backward pass
+        def backward(self, dvalues):
+
+            # Create uninitialized array
             self.dinputs = np.empty_like(dvalues)
 
-            for index,(single_output,single_dvalues) in enumerate(zip(self.output,dvalues)):
-                single_output = single_output.reshape(-1,1)
-                jacobian_matrix = np.diagflat(single_output) - np.dot(single_output,single_output.T)
-                self.dinputs[index] = np.dot(jacobian_matrix,single_dvalues)
-
+            # Enumerate outputs and gradients
+            for index, (single_output, single_dvalues) in \
+                    enumerate(zip(self.output, dvalues)):
+                # Flatten output array
+                single_output = single_output.reshape(-1, 1)
+                # Calculate Jacobian matrix of the output
+                jacobian_matrix = np.diagflat(single_output) - \
+                                np.dot(single_output, single_output.T)
+                # Calculate sample-wise gradient
+                # and add it to the array of sample gradients
+                self.dinputs[index] = np.dot(jacobian_matrix,
+                                            single_dvalues)
     class Sigmoid(Activation):
         """
         This class implements the Sigmoid activation function.
@@ -717,29 +731,109 @@ class Activation_S_Loss_CC():
 
 class Optimizers():
     class Optimizer():
-        def __init__(self,learning_rate= 1.0,decay=0.0):
+        def __init__(self,learning_rate= 1.0,decay=0.0,):
             self.learning_rate = learning_rate
             self.current_learning_rate = learning_rate
             self.decay = decay
             self.iterations = 0
 
-
-        def update_params(self,layer):
-            pass
-
-    class SGD(Optimizer):
-        def __init__(self, learning_rate=1, decay=0.):
-            super().__init__(learning_rate, decay)
-        
         def pre_update_params(self):
             if self.decay:
                 self.current_learning_rate = self.learning_rate * (1. / (1. + self.decay * self.iterations))
-        def update_params(self, layer):
-            layer.weights += -self.current_learning_rate * layer.dweights
-            layer.biases += -self.current_learning_rate * layer.dbiases
+
         def post_update_params(self):
             self.iterations += 1
+    
+    class SGD(Optimizer):
+        def __init__(self, learning_rate=1, decay=0.,momentum=0.):
+            super().__init__(learning_rate, decay)
+            self.momentum = momentum
+        
+        def update_params(self, layer):
+            if self.momentum:
+                if not hasattr(layer,'weight_momentums'):
+                    layer.weight_momentums = np.zeros_like(layer.weights)
+                    layer.bias_momentums = np.zeros_like(layer.biases)
+                
+                weight_updates = self.momentum * layer.weight_momentums - self.current_learning_rate * layer.dweights
+                layer.weight_momentums = weight_updates
 
+                bias_updates = self.momentum * layer.bias_momentums - self.current_learning_rate * layer.dbiases
+                layer.bias_momentums = bias_updates
+            else:
+                weight_updates = -self.current_learning_rate * layer.dweights
+                bias_updates = -self.current_learning_rate * layer.dbiases
+            
+            layer.weights += weight_updates
+            layer.biases += bias_updates
+
+    class AdaGrad(Optimizer):
+        def __init__(self, learning_rate=1, decay=0,epsilon = 1e-7):
+            super().__init__(learning_rate, decay)
+            self.epsilon = epsilon
+
+        # Update parameters
+        def update_params(self, layer):
+
+            # If layer does not contain cache arrays,
+            # create them filled with zeros
+            if not hasattr(layer, 'weight_cache'):
+                layer.weight_cache = np.zeros_like(layer.weights)
+                layer.bias_cache = np.zeros_like(layer.biases)
+
+            # Update cache with squared current gradients
+            layer.weight_cache += layer.dweights**2
+            layer.bias_cache += layer.dbiases**2
+
+            # Vanilla SGD parameter update + normalization
+            # with square rooted cache
+            layer.weights += -self.current_learning_rate *layer.dweights /(np.sqrt(layer.weight_cache) + self.epsilon)
+            layer.biases += -self.current_learning_rate * layer.dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
+
+    class RMSProp(Optimizer):
+        def __init__(self,learning_rate=1.0,decay=0.0,epsilon=1e-7,rho=0.9):
+            super().__init__(learning_rate,decay)
+            self.epsilon = epsilon
+            self.rho = rho
+        def update_params(self,layer):
+            if not hasattr(layer,'weight_cache'):
+                layer.weight_cache = np.zeros_like(layer.weights)
+                layer.bias_cache = np.zeros_like(layer.biases)
+            
+            layer.weight_cache = self.rho * layer.weight_cache + (1-self.rho)*layer.dweights**2
+            layer.bias_cache = self.rho * layer.bias_cache + (1-self.rho)*layer.dbiases**2
+
+            layer.weights += -self.current_learning_rate *layer.dweights/(np.sqrt(layer.weight_cache) + self.epsilon)
+            layer.biases += -self.current_learning_rate *layer.dbiases /(np.sqrt(layer.bias_cache) + self.epsilon)
+
+    class Adam(Optimizer):
+        def __init__(self,learning_rate=0.001, decay = 0.,epsilon=1e-7,beta_1= 0.9,beta_2=0.999):
+            super().__init__(learning_rate,decay)
+            self.epsilon = epsilon
+            self.beta_1 = beta_1
+            self.beta_2 = beta_2
+        def update_params(self,layer):
+
+            if not hasattr(layer,'weight_cache'):
+                layer.weight_momentums = np.zeros_like(layer.weights)
+                layer.weight_cache = np.zeros_like(layer.weights)
+                layer.bias_momentums = np.zeros_like(layer.biases)
+                layer.bias_cache = np.zeros_like(layer.biases)
+            
+            layer.weight_momentums = self.beta_1 * layer.weight_momentums + (1-self.beta_1)*layer.dweights
+            layer.bias_momentums = self.beta_1 * layer.bias_momentums + (1-self.beta_1)*layer.dbiases
+
+            weight_momentums_corrected = layer.weight_momentums/(1-self.beta_1**(self.iterations+1))
+            bias_momentums_corrected = layer.bias_momentums/(1-self.beta_1**(self.iterations+1))
+            
+            layer.weight_cache = self.beta_2 * layer.weight_cache + (1-self.beta_2)*layer.dweights**2
+            layer.bias_cache = self.beta_2 * layer.bias_cache + (1-self.beta_2)*layer.dbiases**2
+
+            weight_cache_corrected = layer.weight_cache/(1-self.beta_2**(self.iterations+1))
+            bias_cache_corrected = layer.bias_cache/(1-self.beta_2**(self.iterations+1))
+
+            layer.weights += -self.current_learning_rate * weight_momentums_corrected/(np.sqrt(weight_cache_corrected) + self.epsilon)
+            layer.biases += -self.current_learning_rate * bias_momentums_corrected/(np.sqrt(bias_cache_corrected) + self.epsilon)
 
 X,y = spiral_data(samples=100 , classes = 3)
 dense1 = Dense(2,64)
@@ -756,10 +850,10 @@ print()
 """
 relu = ActivationFunctions().ReLU()
 softcc = Activation_S_Loss_CC()
-sgd = Optimizers.SGD(decay=1e-3)
+optimizer = Optimizers.Adam(learning_rate=0.05,decay=5e-7)
 
 
-for epoch in range(100001):
+for epoch in range(10001):
 
     dense1.forward(X)
     relu.forward(dense1.output)
@@ -771,19 +865,27 @@ for epoch in range(100001):
     accuracy = np.mean(preds==y)
 
     if not epoch % 100:
-        print(f"epoch: {epoch}, acc: {accuracy:.3f}, loss: {loss:.3f}, lr: {sgd.current_learning_rate:.3f}")
-    if accuracy > 0.8:
-        break
+        print(f"epoch: {epoch}, acc: {accuracy:.3f}, loss: {loss:.3f}, lr: {optimizer.current_learning_rate:.3f}")
+
 
     softcc.backward(softcc.output,y)
     dense2.backward(softcc.dinputs)
     relu.backward(dense2.dinputs)
     dense1.backward(relu.dinputs)
 
-    sgd.pre_update_params()
-    sgd.update_params(dense1)
-    sgd.update_params(dense2)
-    sgd.post_update_params()
+    optimizer.pre_update_params()
+    optimizer.update_params(dense1)
+    optimizer.update_params(dense2)
 
-
-
+    optimizer.post_update_params()
+ 
+X_test,y_test = spiral_data(samples=100,classes=3)
+dense1.forward(X_test)
+relu.forward(dense1.output)
+dense2.forward(relu.output)
+loss = softcc.forward(dense2.output,y_test)
+preds = np.argmax(softcc.output,axis=1)
+if len(y_test.shape)==2:
+    y_test = np.argmax(y_test,axis=1)
+accuracy = np.mean(preds==y_test)
+print(f"validation, acc: {accuracy:.3f}, loss: {loss:.3f}")

@@ -1,5 +1,6 @@
 import nnfs 
 from nnfs.datasets import spiral_data
+from nnfs.datasets import sine_data
 nnfs.init()
 import numpy as np
 class Layer:
@@ -527,7 +528,7 @@ class LossFunctions():
             outputs = len(dvalues[0])
             self.dinputs = np.sign(y_true-dvalues)/outputs
             self.dinputs = self.dinputs/samples
-            
+
     class BinaryCrossEntropy(Loss):
         def forward(self,y_pred,y_true):
             y_pred_clipped = np.clip(y_pred,1e-7,1-1e-7)
@@ -910,11 +911,13 @@ class Optimizers():
             layer.weights += -self.current_learning_rate * weight_momentums_corrected/(np.sqrt(weight_cache_corrected) + self.epsilon)
             layer.biases += -self.current_learning_rate * bias_momentums_corrected/(np.sqrt(bias_cache_corrected) + self.epsilon)
 
-X,y = spiral_data(samples=100 , classes = 2)
-y = y.reshape(-1,1)
-dense1 = Layer.Dense(2, 64, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)
-dropout1= Layer.Dropout(0.1)
-dense2 = Layer.Dense(64,2)
+X,y = sine_data()
+dense1 = Layer.Dense(1, 64)
+
+#dropout1= Layer.Dropout(0.1)
+dense2 = Layer.Dense(64,64)
+
+dense3 = Layer.Dense(64,1)
 """
 print("Dense1 weights: ",dense1.weights)
 print()
@@ -925,53 +928,64 @@ print()
 print("Dense2 biases: ",dense2.biases)
 print()
 """
-relu = ActivationFunctions().ReLU()
-sigmoid = ActivationFunctions.Sigmoid()
-softcc = Activation_S_Loss_CC()
-BCE= LossFunctions.BinaryCrossEntropy()
-optimizer = Optimizers.Adam(decay=5e-7,learning_rate=0.005)
+relu1 = ActivationFunctions().ReLU()
+relu2 = ActivationFunctions().ReLU()
+linear = ActivationFunctions.Linear()
 
+MSE= LossFunctions.MeanSquaredError()
+optimizer = Optimizers.Adam(learning_rate=0.005,decay=1e-3)
 
+accuracy_precision = np.std(y)/250
 
 for epoch in range(10001):
 
     dense1.forward(X)
-    relu.forward(dense1.output)
-    dense2.forward(relu.output)
-    sigmoid.forward(dense2.output)
-    data_loss = BCE.calculate(sigmoid.output,y)
-    regularization_loss = BCE.regularization_loss(dense1) + BCE.regularization_loss(dense2)
+    relu1.forward(dense1.output)
+    dense2.forward(relu1.output)
+    relu2.forward(dense2.output)
+    dense3.forward(relu2.output)
+    linear.forward(dense3.output)
+    data_loss = MSE.calculate(linear.output,y)
+
+    regularization_loss = MSE.regularization_loss(dense1) + MSE.regularization_loss(dense2) + MSE.regularization_loss(dense3)
     loss = data_loss + regularization_loss
 
-    preds = (sigmoid.output > 0.5) * 1 
-    accuracy = np.mean(preds==y)
+    preds = linear.output.copy()
+    accuracy = np.mean(np.abs(preds - y) < accuracy_precision)
 
     if not epoch % 100:
         print(f"epoch: {epoch}, acc: {accuracy:.3f}, loss: {loss:.3f}, lr: {optimizer.current_learning_rate:.3f}")
 
 
 
-    BCE.backward(sigmoid.output,y)
+    MSE.backward(linear.output,y)
 
-    sigmoid.backward(BCE.dinputs)
-    dense2.backward(sigmoid.dinputs)
-    relu.backward(dense2.dinputs)
-
-    dense1.backward(relu.dinputs)
+    linear.backward(MSE.dinputs)
+    dense3.backward(linear.dinputs)
+    relu2.backward(dense3.dinputs)
+    dense2.backward(relu2.dinputs)
+    relu1.backward(dense2.dinputs)
+    
+    dense1.backward(relu1.dinputs)
 
     optimizer.pre_update_params()
     optimizer.update_params(dense1)
     optimizer.update_params(dense2)
+    optimizer.update_params(dense3)
 
     optimizer.post_update_params()
  
-X_test,y_test = spiral_data(samples=100,classes=2)
+X_test,y_test = sine_data()
 y_test = y_test.reshape(-1,1)
 dense1.forward(X_test)
-relu.forward(dense1.output)
-dense2.forward(relu.output)
-sigmoid.forward(dense2.output)
-loss = BCE.calculate(sigmoid.output, y_test)
-preds = (sigmoid.output >0.5)*1
-accuracy = np.mean(preds==y_test)
-print(f"validation, acc: {accuracy:.3f}, loss: {loss:.3f}")
+relu1.forward(dense1.output)
+dense2.forward(relu1.output)
+relu2.forward(dense2.output)
+dense3.forward(relu2.output)
+linear.forward(dense3.output)
+
+
+import matplotlib.pyplot as plt
+plt.plot(X_test,y_test)
+plt.plot(X_test,linear.output)
+plt.show()

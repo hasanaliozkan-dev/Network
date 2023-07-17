@@ -1,8 +1,11 @@
 import nnfs 
+import numpy as np
 from nnfs.datasets import spiral_data
 from nnfs.datasets import sine_data
+
+
 nnfs.init()
-import numpy as np
+
 class Layer:
     class Dense:
         def __init__(self,n_inputs,n_neurons,weight_regularizer_l1=0,weight_regularizer_l2=0,bias_regularizer_l1=0,bias_regularizer_l2=0):
@@ -528,9 +531,26 @@ class LossFunctions():
         def calculate(self,output,y,*,include_regularization=False):
             sample_losses = self.forward(output,y)
             data_loss = np.mean(sample_losses)
+            self.accumulated_sum += np.sum(sample_losses)
+            self.accumulated_count +=len(sample_losses)
+
             if not include_regularization:
                 return data_loss
             return data_loss,self.regularization_loss()
+        
+        def calculate_accumulate(self,*,include_regularization=False):
+            data_loss = self.accumulated_sum / self.accumulated_count
+
+            if not include_regularization:
+                return data_loss
+            
+            return data_loss, self.regularization_loss()
+        
+        def new_pass(self):
+            self.accumulated_sum = 0
+            self.accumulated_count = 0
+
+
 
     class MeanSquaredError(Loss):
         def forward(self,y_pred,y_true):
@@ -976,6 +996,9 @@ class Model():
                 
         
         if validation_data is not None:
+            self.loss.new_pass()
+            self.accuracy.new_pass()
+            
             X_val,y_val = validation_data
             output = self.forward(X_val,training=False)
             loss = self.loss.calculate(output,y_val)
@@ -1032,13 +1055,31 @@ class Model():
         for layer in reversed(self.layers):
             layer.backward(layer.next.dinputs)
 
+    def evaluate(self,X_val,y_val,*,batch_size =None):
+        validation_steps = 1
+        if batch_size is not None:
+
+            validation_steps=len(X_val) //batch_size
+            if validation_steps*batch_size<len(X_val):
+                validation_steps +=1
+
 class Accuracy():
 
     class Main():
         def calculate(self,predictions,y):
             comparisons = self.compare(predictions,y)
             accuracy = np.mean(comparisons)
+            self.accumulated_sum += np.sum(comparisons)
+            self.accumulated_count += len(comparisons)
             return accuracy
+    
+        def calculate_accumulated(self):
+            accuracy = self.accumulated_sum/self.accumulated_count
+            return accuracy
+        
+        def new_pass(self):
+            self.accumulated_sum = 0
+            self.accumulated_count = 0
 
     class Regression(Main):
         def __init__(self):
@@ -1061,8 +1102,67 @@ class Accuracy():
             
             return predictions == y
 
+#install opencv with 
 
     
+## Data Loading
+
+import os 
+import cv2
+
+def load_mnist_dataset(dataset,path):
+
+    labels = os.listdir(os.path.join(path,dataset))
+    X = []
+    y = []
+
+    for label in labels:
+        for file in os.listdir(os.path.join(path,dataset,label)):
+            image = cv2.imread(os.path.join(path,dataset,label,file),cv2.IMREAD_UNCHANGED)
+
+            X.append(image)
+            y.append(label)
+    
+    return np.array(X),np.array(y).astype('uint8')
+
+def create_data_mnist(path):
+    X,y = load_mnist_dataset('train',path)
+    X_test,y_test = load_mnist_dataset('test',path)
+    return X,y,X_test,y_test
+
+X,y,X_test,y_test = create_data_mnist('fashion_mnist_images')
+
+X = (X.astype(np.float32) - 127.5)/127.5
+X_test = (X_test.astype(np.float32) - 127.5)/127.5
+
+print(X.min(),X.max())
+
+print(X.shape)
+
+example = np.array([[1,2],[3,4]])
+flattened = example.reshape(-1)
+
+print(example)
+print(example.shape)
+
+print(flattened)
+print(flattened.shape)
+
+"""
+print(labels)
+
+import cv2
+image_data = cv2.imread('fashion_mnist_images/train/7/0002.png', cv2.IMREAD_UNCHANGED)
+
+print(image_data)
+
+np.set_printoptions(linewidth=200)
+import matplotlib.pyplot as plt
+plt.imshow(image_data) 
+plt.show()
+"""
+
+"""
 X,y = sine_data()
 dense1 = Layer.Dense(1, 64)
 
@@ -1079,6 +1179,7 @@ print(model.layers)
 
 model.finalize()
 model.train(X,y,epochs=10000,print_every=100)
+"""
 #dropout1= Layer.Dropout(0.1)
 """
 dense2 = Layer.Dense(64,64)

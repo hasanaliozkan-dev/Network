@@ -2,6 +2,7 @@ import nnfs
 import numpy as np
 from nnfs.datasets import spiral_data
 from nnfs.datasets import sine_data
+import pickle
 
 
 nnfs.init()
@@ -43,6 +44,13 @@ class Layer:
                 self.dbiases += 2*self.bias_regularizer_l2*self.biases
 
             self.dinputs = np.dot(dvalues,self.weights.T)
+
+        def get_parameters(self):
+            return self.weights, self.biases
+        def set_parameters(self,weights,biases):
+            self.weights = weights
+            self.biases = biases
+
     class Dropout:
     
         def __init__(self,rate):
@@ -963,11 +971,15 @@ class Model():
     def add(self,layer):
         self.layers.append(layer)
 
-    def set(self,*,loss,optimizer,accuracy):
-        self.loss = loss
-        self.optimizer = optimizer
-        self.accuracy = accuracy
-    
+    def set(self,*,loss = None,optimizer = None,accuracy = None):
+        
+        if loss is not None:
+            self.loss = loss
+        if optimizer is not None:
+            self.optimizer = optimizer
+        if accuracy is not None:
+            self.accuracy = accuracy
+   
     def train(self,X,y,*,epochs=1,print_every=1,validation_data=None):
 
 
@@ -1006,7 +1018,14 @@ class Model():
             accuracy = self.accuracy.calculate(predictions,y_val)
             print(f'validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
 
-    
+    def save_parameters(self,path):
+        with open(path,'wb') as f:
+            pickle.dump(self.get_parameters(),f)
+
+    def load_parameters(self,path):
+        with open(path,'rb') as f:
+            self.set_parameters(pickle.load(f))
+            
     def finalize(self):
         self.input_layer = Layer.Input()
 
@@ -1028,7 +1047,8 @@ class Model():
             if hasattr(self.layers[i],'weights'):
                 self.trainable_layers.append(self.layers[i])
         
-            self.loss.remember_trainable_layers(self.trainable_layers)
+            if self.loss is not None:
+                self.loss.remember_trainable_layers(self.trainable_layers)
 
         if isinstance(self.layers[-1],ActivationFunctions.Softmax) and isinstance(self.loss, LossFunctions.CategoricalCrossentropy):
             self.softmax_classifier_output = LossFunctions.Softmax_CategoricalCrossentropy()
@@ -1063,6 +1083,17 @@ class Model():
             if validation_steps*batch_size<len(X_val):
                 validation_steps +=1
 
+    def get_parameters(self):
+        parameters = []
+
+        for layer in self.trainable_layers:
+            parameters.append(layer.get_parameters())
+        return parameters
+
+    def set_parameters(self,parameters):
+
+        for parameter_set,layer in zip(parameters,self.trainable.layers):
+            layer.set_parameters(*parameter_set)
 class Accuracy():
 
     class Main():

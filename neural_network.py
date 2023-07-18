@@ -3,6 +3,7 @@ import numpy as np
 from nnfs.datasets import spiral_data
 from nnfs.datasets import sine_data
 import pickle
+import copy
 
 
 nnfs.init()
@@ -1025,7 +1026,7 @@ class Model():
     def load_parameters(self,path):
         with open(path,'rb') as f:
             self.set_parameters(pickle.load(f))
-            
+
     def finalize(self):
         self.input_layer = Layer.Input()
 
@@ -1094,6 +1095,29 @@ class Model():
 
         for parameter_set,layer in zip(parameters,self.trainable.layers):
             layer.set_parameters(*parameter_set)
+
+    def save(self,path):
+        model = copy.deepcopy(self)
+
+        model.loss.new_pass()
+        model.accuracy.new_pass()
+
+        model.input_layer.__dict__.pop('output',None)
+        model.loss.__dict__.pop('dinputs',None)
+
+        for layer in model.layers:
+            for property in ['inputs','output','dinputs','dweights','dbiases']:
+                layer.__dict__.pop(property,None)
+        
+        with open(path,'wb') as f:
+            pickle.dump(model,f)
+    
+
+    @staticmethod
+    def load(path):
+        with open(path,'rb') as f:
+            model = pickle.load(f)
+        return model
 class Accuracy():
 
     class Main():
